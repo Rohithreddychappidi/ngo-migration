@@ -1,0 +1,7 @@
+cd ngo-migration/backend
+cat > .gitignore << 'EOF'
+node_modules/
+.env
+uploads/
+*.log
+EOF
