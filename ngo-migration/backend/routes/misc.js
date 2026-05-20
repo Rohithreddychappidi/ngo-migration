@@ -1,8 +1,9 @@
-// volunteers.js
 const express = require('express');
 const db = require('../config/db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { upload, getFileUrl } = require('../middleware/upload');
 
+// ─── Volunteers ───────────────────────────────────────────────────────────────
 const volunteersRouter = express.Router();
 
 volunteersRouter.post('/', requireAuth, async (req, res) => {
@@ -34,7 +35,7 @@ volunteersRouter.put('/:id/status', requireAuth, requireAdmin, async (req, res) 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ─── contacts.js ─────────────────────────────────────────────────────────────
+// ─── Contacts ─────────────────────────────────────────────────────────────────
 const contactsRouter = express.Router();
 
 contactsRouter.post('/', async (req, res) => {
@@ -69,12 +70,14 @@ contactsRouter.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ─── users.js ─────────────────────────────────────────────────────────────────
+// ─── Users ────────────────────────────────────────────────────────────────────
 const usersRouter = express.Router();
 
 usersRouter.get('/', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { rows } = await db.query('SELECT id, name, email, photo, role, total_donated, created_at FROM users ORDER BY created_at DESC');
+    const { rows } = await db.query(
+      'SELECT id, name, email, photo, role, total_donated, created_at FROM users ORDER BY created_at DESC'
+    );
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -83,14 +86,18 @@ usersRouter.put('/:id/role', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { role } = req.body;
     if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
-    const { rows } = await db.query('UPDATE users SET role=$1 WHERE id=$2 RETURNING *', [role, req.params.id]);
+    const { rows } = await db.query(
+      'UPDATE users SET role=$1 WHERE id=$2 RETURNING *',
+      [role, req.params.id]
+    );
     res.json(rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ─── cms.js ───────────────────────────────────────────────────────────────────
+// ─── CMS ──────────────────────────────────────────────────────────────────────
 const cmsRouter = express.Router();
 
+// GET all fields for a page
 cmsRouter.get('/:pageKey', async (req, res) => {
   try {
     const { rows } = await db.query(
@@ -103,22 +110,37 @@ cmsRouter.get('/:pageKey', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST save fields for a page (flat key-value pairs)
 cmsRouter.post('/:pageKey', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { pageKey } = req.params;
-    const fields = req.body; // { field_key: value, ... }
+    const fields = req.body;
     for (const [field_key, value] of Object.entries(fields)) {
       await db.query(`
         INSERT INTO cms_content (page_key, field_key, value)
-        VALUES ($1,$2,$3)
-        ON CONFLICT (page_key, field_key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()
-      `, [pageKey, field_key, value]);
+        VALUES ($1, $2, $3)
+        ON CONFLICT (page_key, field_key)
+        DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+      `, [pageKey, field_key, value ?? '']);
     }
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ─── donationPlans.js ─────────────────────────────────────────────────────────
+// POST upload image for CMS use
+cmsRouter.post('/upload/image', requireAuth, requireAdmin,
+  (req, res, next) => { req.uploadFolder = 'cms'; next(); },
+  upload.single('image'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+      const url = getFileUrl(req, `uploads/cms/${req.file.filename}`);
+      res.json({ url });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  }
+);
+
+// ─── Donation Plans ───────────────────────────────────────────────────────────
 const plansRouter = express.Router();
 
 plansRouter.get('/', async (req, res) => {
@@ -143,7 +165,7 @@ plansRouter.put('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { name, amount, perks, featured, sort_order } = req.body;
     const { rows } = await db.query(
-      'UPDATE donation_plans SET name=$1,amount=$2,perks=$3,featured=$4,sort_order=$5 WHERE id=$6 RETURNING *',
+      'UPDATE donation_plans SET name=$1, amount=$2, perks=$3, featured=$4, sort_order=$5 WHERE id=$6 RETURNING *',
       [name, amount, perks, featured, sort_order, req.params.id]
     );
     res.json(rows[0]);

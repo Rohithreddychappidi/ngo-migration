@@ -8,6 +8,10 @@ const path = require('path');
 
 const app = express();
 
+
+// Trust proxy — required when running behind Render/ngrok/nginx
+app.set('trust proxy', 1);
+
 // ─── Security & Middleware ────────────────────────────────────────────────────
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({
